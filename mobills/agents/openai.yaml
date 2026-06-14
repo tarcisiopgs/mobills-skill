@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mobills"
+  short_description: "Manage Mobills accounts and credit cards"
+  default_prompt: "Use $mobills to list, create, or update Mobills accounts and credit cards safely."

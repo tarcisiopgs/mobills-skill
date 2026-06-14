@@ -1,0 +1,6 @@
+.agents/
+.claude/
+skills/
+skills-lock.json
+*.skill
+.env
