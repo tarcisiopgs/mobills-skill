@@ -24,6 +24,7 @@ Content-Type: application/json
 - Use `GET` endpoints to inspect current records before writes.
 - Use read-after-write verification for every create or edit.
 - For bulk imports, put an idempotency marker in `observacao` or another durable field and search for it before creating records.
+- When reconciling or replacing imported records, keep markers for old records and newly created native records distinct. If using fallback matching by date, description, and amount, explicitly exclude records that contain the new/native marker to avoid deleting or editing the replacement occurrence.
 - Do not assume tags, category granularity, account naming, or personal/business separation conventions. Those are user choices.
 - Preserve unknown fields when editing records, especially when the web app sends full objects or wrapper objects.
 - Dates are generally ISO strings. The web app often sends UTC-style timestamps such as `YYYY-MM-DDT00:00:00.000Z`.
@@ -300,6 +301,43 @@ Notes:
 - `status: 0` means paid/effective; `status: 1` means pending.
 - The API validates `quantidadeRepeticao` between `2` and `99`, even when `repetir` is false.
 - For fixed or repeated expenses, the web app may add fields such as `dataOriginalDespesa`, `opcaoEditarDespesaFixa`, `despesaFixaId`, `OpcaoExcluirDespesaRepetida`, and `isDespesaRepetida`.
+- To create a fixed monthly expense, send `isDespesaFixa: true` and `repetir: false`.
+- To create a finite monthly repeated expense, send `isDespesaFixa: false`, `repetir: true`, `quantidadeRepeticao` as a string from `2` to `99`, and `periodoRepeticao: "3"`.
+
+Delete:
+
+```text
+POST Despesas/Delete
+```
+
+Observed delete shape:
+
+```json
+{
+  "despesas": [
+    {
+      "mes": 6,
+      "ano": 2026,
+      "despesaId": 1355130358,
+      "despesaFixaId": 0,
+      "isDespesaFixa": false,
+      "isDespesaRepetida": false,
+      "opcaoExcluirDespesaRepetida": 0,
+      "opcaoExcluirDespesaFixa": 0,
+      "valor": 50,
+      "uniqueId": "optional-unique-id",
+      "anexo": null
+    }
+  ]
+}
+```
+
+Delete notes:
+
+- For regular expenses, use the item `id` as `despesaId`.
+- If the listed item has `status: 3`, the web app uses `despesaId: 0`.
+- For fixed expenses, use `despesaFixaId` from the item, or the item `id` when the item is fixed and no separate fixed id is present.
+- For repeated expenses, set `isDespesaRepetida` based on whether `controleRepeticaoDespesa` is present. Use delete option `0` to remove only the selected occurrence.
 
 ## Account Incomes
 
@@ -374,6 +412,43 @@ Notes:
 
 - `status: 0` means received/effective; `status: 1` means pending.
 - The API validates `quantidadeRepeticao` between `2` and `99`, even when `repetir` is false.
+- To create a fixed monthly income, send `isReceitaFixa: true` and `repetir: false`.
+- To create a finite monthly repeated income, send `isReceitaFixa: false`, `repetir: true`, `quantidadeRepeticao` as a string from `2` to `99`, and `periodoRepeticao: "3"`.
+
+Delete:
+
+```text
+POST Receitas/Delete
+```
+
+Observed delete shape:
+
+```json
+{
+  "receitas": [
+    {
+      "mes": 6,
+      "ano": 2026,
+      "receitaId": 277883238,
+      "isReceitaFixa": false,
+      "isReceitaRepetida": false,
+      "receitaFixaId": 0,
+      "opcaoExcluirReceitaRepetida": 0,
+      "opcaoExcluirReceitaFixa": 0,
+      "valor": 100,
+      "uniqueId": "optional-unique-id",
+      "anexo": null
+    }
+  ]
+}
+```
+
+Delete notes:
+
+- For regular incomes, use the item `id` as `receitaId`.
+- If the listed item has `status: 3`, the web app uses `receitaId: 0`.
+- For fixed incomes, use `receitaFixaId` from the item, or the item `id` when the item is fixed and no separate fixed id is present.
+- For repeated incomes, set `isReceitaRepetida` based on whether `controleRepeticaoReceita` is present. Use delete option `0` to remove only the selected occurrence.
 
 ## Credit Card Expenses
 
@@ -381,6 +456,12 @@ List card expenses by invoice month:
 
 ```text
 GET DespesaCartao?cartaoId={cardId}&mes={month}&ano={year}
+```
+
+List fixed card expenses:
+
+```text
+GET DespesaCartao/DespesasFixasCartao?cartaoId={cardId}
 ```
 
 Create:
@@ -462,7 +543,32 @@ Notes:
 
 - `fatura` should be the invoice due date selected for that card expense.
 - The API validates `quantidadeParcelas` between `2` and `99`, even when `parcelado` is false.
-- If creating actual installments, use `parcelado: true` and the intended `quantidadeParcelas`; verify how the API creates child records before bulk use.
+- To create actual installments, use `parcelado: true` and the intended `quantidadeParcelas` as a string from `2` to `99`.
+- To create a non-installment card expense, keep `parcelado: false`, but still send a valid `quantidadeParcelas` value such as `"2"` because the API validates the field even when it is not used.
+
+Delete:
+
+```text
+POST DespesaCartao/Delete
+```
+
+Observed delete shape:
+
+```json
+{
+  "despesaCartaoId": 496381959,
+  "despesaParcelada": false,
+  "opcaoExcluirDespesaParcelada": 1,
+  "valor": 25,
+  "pagamentoAdiantado": false
+}
+```
+
+Delete notes:
+
+- Use `despesaCartaoId` from `despesaCartaoId` when present; otherwise use the item `id`.
+- Set `despesaParcelada` based on whether `controleRepeticaoDespesaCartao` is present.
+- Use `opcaoExcluirDespesaParcelada: 1` to remove the selected card expense occurrence.
 
 ## Transfers
 
@@ -518,11 +624,20 @@ POST Transferencias/Edit
 
 Use the create shape plus `id` when editing.
 
+Delete:
+
+```text
+POST Transferencias/Delete?id={transferId}
+```
+
 Notes:
 
 - Creating transfers with only ids can return a generic HTTP 500. Include both account ids and the `deConta`/`paraConta` account objects.
 - Include `transferenciaFixa`, `isTransferenciaFixa`, `diaTransferenciaFixa`, and `verificarTransferencias`.
 - The transfer form validates `observacao` to 128 characters. Keep idempotency markers compact.
+- `GET Transferencias?mes={month}&ano={year}` may return transfers under `transferencias` or `movimentacoes`; handle both response keys.
+- For delete, use the `id` query-string form. Posting a JSON body such as `{"id": 123}` to `Transferencias/Delete` can return a generic HTTP 500.
+- Fixed transfers use separate endpoints such as `Transferencias/DeleteTransferenciaFixa`; verify the current web bundle before deleting fixed transfer series.
 
 ## Combined Transactions
 
@@ -548,4 +663,5 @@ The combined view returns `movimentacoes` that may represent expenses, incomes, 
 - Existing card records may have different `diaFechamento` from another source system; treat the chosen source of truth explicitly.
 - `Despesas/Edit` and `Receitas/Edit` expect wrapper objects; `DespesaCartao/Edit` does not.
 - Some endpoints return generic HTTP 500 for malformed payloads instead of validation details.
+- Delete endpoint shapes differ by resource: expenses and incomes use wrapper objects, card expenses use a direct JSON payload, and transfers use the id in the query string.
 - Avoid delete/archive endpoints unless specifically requested and confirmed.
